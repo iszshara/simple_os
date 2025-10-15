@@ -166,3 +166,41 @@ pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
     WRITER.lock().write_fmt(args).unwrap();
 }
+
+////////////////////////////////////
+//
+// Tests
+//
+////////////////////////////////////
+
+// testet ob println funktioniert und nicht panicked
+#[test_case]
+fn test_println_simple()
+{
+    println!("test_println_simple output");
+}
+
+// testet das Schreiben vieler Zeilen und checkt ob der vga buffer panicked wenn die Zeilen außerhalb des Bildschirmes geshifted werden
+#[test_case]
+fn test_println_many()
+{
+    for _ in 0..200
+    {
+        println!("test_println_many output");
+    }
+}
+
+// Testet ob der string wirklich geprinted wird auf dem Bildschirm.
+// In der for-Schleife wird die Anzahl der Iterationen der Variable 'i' gezählt, mittels enumerate
+// und dann mittels assert_eq! abgeglichen ob dieselbe Anzahl an Chars auf dem Bildschirm geprinted werden.
+#[test_case]
+fn test_println_output()
+{
+    let string = "Some test string that fits on a single line";
+    println!("{}", string);
+    for (i, c) in string.chars().enumerate()
+    {
+        let screen_char = WRITER.lock().buffer.chars[BUFFER_HEIGHT - 2][i].read();
+        assert_eq!(char::from(screen_char.ascii_character), c);
+    }
+}

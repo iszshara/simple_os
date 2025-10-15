@@ -37,3 +37,7 @@ test-args = [
 ]
 test-success-exit-code = 33         # (0x10 << 1) | 1 (2^4 nach links geshiftet auf 2^5 + 1 = 33)
 test-timeout = 300                  # in seconds
+
+[[test]]
+name = "should_panic"
+harness = false
