@@ -1,3 +1,7 @@
+//! # simple_os
+//! 
+//! simple_os ist ein Übungsprojekt, um mehr über Betriebssysteme zu lernen.
+//! 
 #![no_std]
 #![cfg_attr(test, no_main)]
 #![feature(custom_test_frameworks)]
@@ -9,10 +13,18 @@ pub mod vga_buffer;
 
 use core::panic::PanicInfo;
 
+////////////////////////////////////////////////////////////////////////////////
+/// 
+/// ## Testable
+/// 
+/// Trait um alle Tests in allen Modulen "einzusammeln" und auszuführen.
+/// 
+////////////////////////////////////////////////////////////////////////////////
 pub trait Testable
 {
     fn run(&self) -> ();
 }
+
 
 impl<T> Testable for T
 where
@@ -44,6 +56,14 @@ pub fn test_panic_handler(info: &PanicInfo) -> !
     loop{}
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// 
+/// ## Eingangspunkt
+/// 
+/// Eigener Eingangspunkt und Panic Handler , da lib.rs nicht abhängig ist von
+/// main.rs.
+/// 
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> !
@@ -59,6 +79,17 @@ fn panic(info: &PanicInfo) -> !
     test_panic_handler(info)
 }
 
+////////////////////////////////////////////////////////////////////////////////
+///
+/// ## Exit Qemu
+/// 
+/// Stellt die exit_qemu() Funktion bereit, welche verwendet werden kann,
+/// um einen Failed oder Success Exit Code bereitzustellen.
+/// Dadurch kann bestimmt werden, ob ein Prozess als erfolgreich oder nicht 
+/// erfolgreich bestimmt wird. 
+/// In der lib.rs wird QemuExitCode für alle zur Verfügung gestellt.
+/// 
+////////////////////////////////////////////////////////////////////////////////
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum QemuExitCode

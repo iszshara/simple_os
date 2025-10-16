@@ -3,9 +3,19 @@ use volatile::Volatile;
 use core::fmt;
 use lazy_static::lazy_static;
 
+////////////////////////////////////////////////////////////////////////////////
+/// 
+/// ## Enum
+/// 
+/// #[derive(Debug, Clone, Copy, PartialEq, Eq)] 
+/// -> Nun können Copy Semantics genutzt werden für den Type, sowie das man es 
+/// printen und vergleichen kann.
+/// 
+/// #[repr(u8)]
+/// -> dadurch werden alle Enum Variants als u8 gespeichert.
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)] //Nun können Copy Semantics genutzt werden für den Type, sowie das man es printen und comparen kann
-#[repr(u8)] //dadurch werden alle Enum Variants als u8 gespeichert
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum Color
 {
     Black = 0,
@@ -26,6 +36,16 @@ pub enum Color
     White = 15,
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// 
+/// ## ColorCode
+/// 
+/// Der Color Code wird in einer struct gespeichert da er mehrere Argumente
+/// vereint. Weiterhin wird er als u8 gespeichert, da der Vordergrund 4 bit und 
+/// der Hintergrund 4 bit groß ist und so zusammengesetzt wird, wie man in dem
+/// impl-Block sehen kann.
+/// 
+////////////////////////////////////////////////////////////////////////////////
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 struct ColorCode(u8);
@@ -38,6 +58,16 @@ impl ColorCode
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// 
+/// ## ScreenChar
+/// 
+/// In der struct ScreenChar werden die Fields ascii_character und color_code
+/// initialisiert, da ein Char, der auf den Bildschirm geprintet wird, aus einem 
+/// Ascii Buchstaben besteht und dem dazugehörigen Color Code, um den 
+/// Hintergrund und Vordergrund darstellen zu können.
+/// 
+////////////////////////////////////////////////////////////////////////////////
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 struct ScreenChar
@@ -46,6 +76,17 @@ struct ScreenChar
     color_code: ColorCode,
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// 
+/// ## Buffer
+/// 
+/// Der Text wird in den Buffer geschrieben, aber in zukünftigen Rust Versionen
+/// könnte der Rust Compiler aggressiver optimieren und den Schreibprozess 
+/// auslassen da nur einmal in den Buffer geschrieben wird. Um das zu verhindern
+/// wird Volatile genutzt. Volatile zeigt dem Compiler an, das der Schreibvorgang
+/// Nebeneffekte haben kann und nicht wegoptimiert werden soll.
+/// 
+////////////////////////////////////////////////////////////////////////////////
 const BUFFER_HEIGHT: usize = 25;
 const BUFFER_WIDTH: usize = 80;
 
@@ -55,6 +96,15 @@ struct Buffer
     chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// 
+/// ## Writer
+/// 
+/// Das Writer struct vereint nun wieder mit den Fields column_position,
+/// color_code und buffer alle notwendigen Argumente die man braucht, um einen
+/// Buchstaben auf den Bildschirm zu schreiben.
+/// 
+////////////////////////////////////////////////////////////////////////////////
 pub struct Writer
 {
     column_position: usize,
@@ -64,6 +114,15 @@ pub struct Writer
 
 impl Writer 
 {
+    ////////////////////////////////////////////////////////////////////////////////
+    /// 
+    /// ## impl Writer - write_byte()
+    /// 
+    /// Schreibt Byte für Byte (Character für Character) in den Buffer hinein
+    /// und trackt die ganze Zeit die aktuelle Position, sowie den vorgegebenen
+    /// Abstand.
+    /// 
+    ////////////////////////////////////////////////////////////////////////////////
     pub fn write_byte(&mut self, byte: u8)
     {
         match byte
@@ -88,6 +147,15 @@ impl Writer
         }
     }
 
+    ////////////////////////////////////////////////////////////////////////////////
+    /// 
+    /// ## impl Writer - write_string()
+    /// 
+    /// Reiht die Bytes aus write_byte() hintereinander zu einem String zusammen und
+    /// checkt ob der geschriebene Character ein gültiger Ascii Character ist. Wenn
+    /// nicht wird ein weißes Viereck ausgegeben.
+    /// 
+    ////////////////////////////////////////////////////////////////////////////////
     pub fn write_string(&mut self, s: &str)
     {
         for byte in s.bytes()
@@ -102,6 +170,15 @@ impl Writer
         }
     }
 
+    ////////////////////////////////////////////////////////////////////////////////
+    /// 
+    /// ## impl-Writer new_line()
+    /// 
+    /// Wenn ein Character über die vorgegebene Breite der Zeile hinausgeschrieben
+    /// werden würde, springt die Funktion in die nächste Zeile in dem die aktuelle
+    /// row minus 1 gerechnet wird.
+    /// 
+    ////////////////////////////////////////////////////////////////////////////////
     fn new_line(&mut self)
     {
         for row in 1..BUFFER_HEIGHT
@@ -116,6 +193,14 @@ impl Writer
         self.column_position = 0;
     }
 
+    ////////////////////////////////////////////////////////////////////////////////
+    /// 
+    /// ## impl-Writer clear_row()
+    /// 
+    /// Setzt den Wert der Spalte auf 0 und somit auf den Anfang zurück und leert
+    /// die aktuelle Zeile.
+    /// 
+    ////////////////////////////////////////////////////////////////////////////////
     fn clear_row(&mut self, row: usize)
     {
         let blank = ScreenChar
@@ -130,6 +215,14 @@ impl Writer
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// 
+/// ## impl fmt::Write for Writer
+/// 
+/// Formatiert den zusammengesetzten String aus write_string() in die 
+/// standardisierte UTF-8 Encodierung. 
+///  
+////////////////////////////////////////////////////////////////////////////////
 impl fmt::Write for Writer
 {
     fn write_str(&mut self, s: &str) -> fmt::Result
@@ -139,9 +232,20 @@ impl fmt::Write for Writer
     }
 }
 
-
-lazy_static!                //damit der Writer nicht während der Compile Time berechnet wird, sondern erst wenn es das erste mal aufgerufen wird (also lazy)
+lazy_static!
 {
+    ////////////////////////////////////////////////////////////////////////////////
+    /// 
+    /// ## WRITER
+    /// 
+    /// pub static ref bedeutet das eine statische Referenz(&'static T) erzeugt wird
+    /// , die beim ersten Zugriff initialisiert wird (durch lazy) und dann für 
+    /// den Rest des Programms unveränderlich bleibt. Mutex stellt währenddessen
+    /// sicher das immer nur ein Prozess auf WRITER zugreifen kann und wenn dieser 
+    /// fertig ist der lock() gelöst wird und andere Prozesse wieder auf WRITER zu-
+    /// greifen können.
+    /// 
+    ////////////////////////////////////////////////////////////////////////////////
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer
     {
         column_position: 0,
@@ -150,6 +254,21 @@ lazy_static!                //damit der Writer nicht während der Compile Time b
     });
 }
 
+////////////////////////////////////////////////////////////////////////////////
+///
+/// ## Custom Macro
+///
+/// Festlegen von eigenen Macros, da man nicht einfach so die normalen nutzen 
+/// kann. Das liegt daran das man die Bibliothek std::io nutzen müsste, welche
+/// aber 1.) von der std-Bibliothek abhängig ist und 2.) somit von einem 
+/// darunterliegenden OS abhängig ist.
+/// 
+/// ### Erklärung zu print!
+/// 
+/// print -> printed Character auf die aktuelle Zeile
+/// println -> dasselbe wie print + neue Zeile
+/// 
+////////////////////////////////////////////////////////////////////////////////
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => ($crate::vga_buffer::_print(format_args!($($arg)*)));
@@ -167,20 +286,31 @@ pub fn _print(args: fmt::Arguments) {
     WRITER.lock().write_fmt(args).unwrap();
 }
 
-////////////////////////////////////
-//
-// Tests
-//
-////////////////////////////////////
-
-// testet ob println funktioniert und nicht panicked
+////////////////////////////////////////////////////////////////////////////////
+/// 
+/// ## Tests
+/// 
+/// ### test_println_simple() 
+/// -> testet ob println funktioniert und nicht panicked
+/// 
+/// ### test_println_many() 
+/// -> testet das Schreiben vieler Zeilen und checkt ob 
+/// der vga buffer panicked wenn die Zeilen außerhalb des Bildschirmes 
+/// geshifted werden
+/// 
+/// ### test_println_output()
+/// -> Testet ob der string wirklich geprinted wird auf dem Bildschirm. In der 
+/// for-Schleife wird die Anzahl der Iterationen der Variable 'i' gezählt, 
+/// mittels enumerate und dann mittels assert_eq! abgeglichen ob dieselbe 
+/// Anzahl an Chars auf dem Bildschirm geprinted werden.
+/// 
+////////////////////////////////////////////////////////////////////////////////
 #[test_case]
 fn test_println_simple()
 {
     println!("test_println_simple output");
 }
 
-// testet das Schreiben vieler Zeilen und checkt ob der vga buffer panicked wenn die Zeilen außerhalb des Bildschirmes geshifted werden
 #[test_case]
 fn test_println_many()
 {
@@ -190,9 +320,6 @@ fn test_println_many()
     }
 }
 
-// Testet ob der string wirklich geprinted wird auf dem Bildschirm.
-// In der for-Schleife wird die Anzahl der Iterationen der Variable 'i' gezählt, mittels enumerate
-// und dann mittels assert_eq! abgeglichen ob dieselbe Anzahl an Chars auf dem Bildschirm geprinted werden.
 #[test_case]
 fn test_println_output()
 {
