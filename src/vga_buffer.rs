@@ -1,3 +1,8 @@
+//! vga_buffer.rs
+//! 1. Erstellt einen VGA Buffer.
+//! 2. Implementiert den WRITER.
+//! 3. Stellt das print! und println! macro zur Verfügung.
+
 use spin::Mutex;
 use volatile::Volatile;
 use core::fmt;
@@ -242,8 +247,8 @@ lazy_static!
     /// , die beim ersten Zugriff initialisiert wird (durch lazy) und dann für 
     /// den Rest des Programms unveränderlich bleibt. Mutex stellt währenddessen
     /// sicher das immer nur ein Prozess auf WRITER zugreifen kann und wenn dieser 
-    /// fertig ist der lock() gelöst wird und andere Prozesse wieder auf WRITER zu-
-    /// greifen können.
+    /// fertig ist der lock() gelöst wird und andere Prozesse wieder auf WRITER 
+    /// zugreifen können.
     /// 
     ////////////////////////////////////////////////////////////////////////////////
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer
@@ -265,7 +270,7 @@ lazy_static!
 /// 
 /// ### Erklärung zu print!
 /// 
-/// print -> printed Character auf die aktuelle Zeile
+/// print -> printed Character auf die aktuelle Zeile   
 /// println -> dasselbe wie print + neue Zeile
 /// 
 ////////////////////////////////////////////////////////////////////////////////
@@ -288,17 +293,17 @@ pub fn _print(args: fmt::Arguments) {
 
 ////////////////////////////////////////////////////////////////////////////////
 /// 
-/// ## Tests
+/// ## Tests   
 /// 
-/// ### test_println_simple() 
+/// ### test_println_simple()   
 /// -> testet ob println funktioniert und nicht panicked
 /// 
-/// ### test_println_many() 
+/// ### test_println_many()   
 /// -> testet das Schreiben vieler Zeilen und checkt ob 
 /// der vga buffer panicked wenn die Zeilen außerhalb des Bildschirmes 
 /// geshifted werden
 /// 
-/// ### test_println_output()
+/// ### test_println_output()   
 /// -> Testet ob der string wirklich geprinted wird auf dem Bildschirm. In der 
 /// for-Schleife wird die Anzahl der Iterationen der Variable 'i' gezählt, 
 /// mittels enumerate und dann mittels assert_eq! abgeglichen ob dieselbe 
