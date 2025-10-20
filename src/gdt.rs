@@ -7,8 +7,39 @@ use x86_64::structures::gdt::SegmentSelector;
 
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
+
 lazy_static!
 {
+    ////////////////////////////////////////////////////////////////////////////////
+    /// 
+    /// Initialisiert den globalen [TaskStateSegment].
+    ///
+    /// Dieser TaskStateSegment definiert den Interrupt-Stack für kritische Ausnahmen,
+    /// insbesondere für **Double Faults**.  
+    /// 
+    /// Dabei wird:
+    /// - ein separater Stack-Bereich von 4096 * 5 Bytes reserviert,
+    /// - dessen Start- und Endadresse berechnet,
+    /// - und der Stack-Endezeiger (stack_end) im entsprechenden
+    ///   [interrupt_stack_table]-Eintrag des TSS hinterlegt.
+    ///
+    /// # Sicherheit
+    ///
+    /// Der Stack wird als static mut allokiert, da der Speicherbereich global
+    /// und dauerhaft verfügbar sein muss.  
+    /// Dies ist sicher, solange der Stack **nur durch die CPU** über den
+    /// entsprechenden Interrupt benutzt wird.
+    ///
+    /// # Hintergrund
+    ///
+    /// Der separate Stack für Double Faults ist notwendig, weil ein Double Fault
+    /// häufig durch **einen defekten oder überlaufenen normalen Stack**
+    /// verursacht wird.  
+    /// Durch die Zuweisung eines unabhängigen Stackbereichs kann das System
+    /// auch im Fehlerfall korrekt reagieren.
+    ///
+    /// [`interrupt_stack_table`]: x86_64::structures::tss::TaskStateSegment::interrupt_stack_table
+    ////////////////////////////////////////////////////////////////////////////////
     static ref TSS: TaskStateSegment =
     {
         let mut tss = TaskStateSegment::new();

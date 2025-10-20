@@ -15,8 +15,9 @@ use simple_os::println;
 /// ## Eingangspunkt
 ///
 /// pub extern "C" fn _start() stellt den Eingangspunkt des ganzen Programmes
-/// dar. Sie gibt ein -> ! zurück was bedeutet, dass diese Funktion niemals terminieren darf, da sonst das 
-/// Betriebssystem abstürzt. In _start() wird weiter hin die Hardware-Initialisierung durchgeführt.
+/// dar. Sie gibt ein -> ! zurück was bedeutet, dass diese Funktion niemals 
+/// terminieren darf, da sonst das Betriebssystem abstürzt. In _start() wird 
+/// weiter hin die Hardware-Initialisierung durchgeführt.
 /// 
 ////////////////////////////////////////////////////////////////////////////////
 #[unsafe(no_mangle)]

@@ -118,6 +118,8 @@ pub fn exit_qemu(exit_code: QemuExitCode)
 ///
 /// ## Initialisieren von Interrupts
 /// 
+/// Initialisiert die Global Description Table (GDT) und die Interrupt 
+/// Description Table (IDT)
 /// 
 ////////////////////////////////////////////////////////////////////////////////
 pub fn init()
