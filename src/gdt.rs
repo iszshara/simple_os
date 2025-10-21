@@ -1,4 +1,28 @@
-//use x86_64::registers::segmentation::Segment;
+//! # Modul gdt
+//!
+//! Dieses Modul implementiert die **Global Descriptor Table (GDT)** für den Kernel.
+//!
+//! Die GDT ist eine zentrale Struktur im x86_64-System, die Speichersegmente verwaltet.
+//! Sie definiert unter anderem:
+//! - Das **Kernel-Code-Segment**
+//! - Das **Task State Segment (TSS)** für Interrupt-Stack-Handling
+//!
+//! ## Übersicht
+//!
+//! - **Globale Initialisierung:** Die GDT wird einmalig über [`lazy_static`] erstellt.
+//! - **Segmente:**  
+//!   - Kernel-Code-Segment → für die CPU-Ausführung des Kernelcodes  
+//!   - TSS-Segment → ermöglicht eigene Stacks für bestimmte Interrupts (z. B. Double Fault)
+//! - **Sicherheit:**  
+//!   - Das Laden von Segmenten (CS, TSS) ist `unsafe`, da ein falscher Wert zu einem **Triple Fault** führen kann
+//!   - Der TSS-Stack wird als `static mut` definiert, um global verfügbar zu sein
+//!
+//! ## Enthaltene Komponenten
+//!
+//! - [`GDT`]: statische Referenz auf die GDT und die Selektoren  
+//! - [`Selectors`]: enthält die Code- und TSS-Selektoren  
+//! - [`init()`]: Initialisiert die GDT und lädt die Segmente in die CPU
+//! - [`TSS`]: Task State Segment, das die Interrupt-Stacks enthält
 use x86_64::VirtAddr;
 use x86_64::structures::tss::TaskStateSegment;
 use lazy_static::lazy_static;
@@ -10,8 +34,6 @@ pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
 lazy_static!
 {
-    ////////////////////////////////////////////////////////////////////////////////
-    /// 
     /// Initialisiert den globalen [TaskStateSegment].
     ///
     /// Dieser TaskStateSegment definiert den Interrupt-Stack für kritische Ausnahmen,
@@ -39,7 +61,6 @@ lazy_static!
     /// auch im Fehlerfall korrekt reagieren.
     ///
     /// [`interrupt_stack_table`]: x86_64::structures::tss::TaskStateSegment::interrupt_stack_table
-    ////////////////////////////////////////////////////////////////////////////////
     static ref TSS: TaskStateSegment =
     {
         let mut tss = TaskStateSegment::new();
@@ -58,6 +79,31 @@ lazy_static!
 
 lazy_static!
 {
+    /// Globale Instanz der **Global Descriptor Table (GDT)**.
+    ///
+    /// Die GDT ist eine zentrale Struktur der x86_64-Architektur.
+    /// Sie beschreibt verschiedene **Segment-Deskriptoren**, also
+    /// Speicherbereiche, die vom Prozessor zur Adressberechnung
+    /// oder für privilegierte Operationen verwendet werden.
+    ///
+    /// In modernen 64-Bit-Systemen spielt die Segmentierung
+    /// nur noch eine geringe Rolle, wird aber weiterhin für
+    /// bestimmte Systemstrukturen wie das **Task State Segment (TSS)**
+    /// benötigt.
+    ///
+    /// Diese Definition:
+    /// - erstellt eine neue [GlobalDescriptorTable],
+    /// - fügt einen **Kernel Code Segment Descriptor** hinzu,
+    /// - fügt einen **TSS Descriptor** hinzu, der auf das globale [TSS] verweist.
+    ///
+    /// # Sicherheit
+    ///
+    /// Die GDT wird global und dauerhaft im Speicher gehalten.
+    /// Da sie einmalig initialisiert und anschließend nur gelesen wird,
+    /// ist der Einsatz von lazy_static! sicher.
+    ///
+    /// [GlobalDescriptorTable]: x86_64::structures::gdt::GlobalDescriptorTable
+    /// [TSS]: crate::tss::TSS
     static ref GDT: (GlobalDescriptorTable, Selectors) =
     {
         let mut gdt = GlobalDescriptorTable::new();
@@ -67,12 +113,42 @@ lazy_static!
     };
 }
 
+/// Beinhaltet die Segment-Selektoren der GDT.
+///
+/// Die Selektoren werden verwendet, um die jeweiligen
+/// Einträge der Global Descriptor Table zu adressieren.
+/// 
+/// - [code_selector]: Verweist auf das Kernel-Code-Segment.
+/// - [tss_selector]: Verweist auf das Task-State-Segment.
 struct Selectors
 {
     code_selector: SegmentSelector,
     tss_selector: SegmentSelector,
 }
 
+/// Initialisiert und lädt die globale GDT.
+///
+/// Diese Funktion:
+/// 1. lädt die GDT mittels lgdt,
+/// 2. aktualisiert das [CS] (Code Segment Register),
+/// 3. lädt das Task-State-Segment (TSS) in die CPU.
+///
+/// # Sicherheit
+///
+/// Das Laden des Code-Segment-Registers und des TSS ist `unsafe`,
+/// da falsche Selektoren oder ungültige Adressen zu einem **Triple Fault**
+/// führen können, wodurch das System sofort neu startet.
+///
+/// Daher darf diese Funktion **nur während der Kernel-Initialisierung**
+/// und **nach erfolgreicher Erstellung aller GDT-Einträge** aufgerufen werden.
+///
+/// # Beispiel
+///
+/// ```no_run
+/// gdt::init();
+/// ```
+///
+/// [`CS`]: x86_64::instructions::segmentation::CS
 pub fn init()
 {
     use x86_64::instructions::tables::load_tss;

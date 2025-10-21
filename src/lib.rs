@@ -1,7 +1,37 @@
 //! # simple_os
 //! 
-//! simple_os ist ein Übungsprojekt, um mehr über Betriebssysteme zu lernen.
+//! **simple_os** ist ein Übungsprojekt, um die Grundlagen von Betriebssystemen,
+//! Bare-Metal-Programmierung und Low-Level-Rust zu verstehen.
+//!
+//! Dieses Projekt folgt dem Aufbau eines minimalistischen Kernels, basierend auf
+//! dem Blog *Writing an OS in Rust* von Philipp Oppermann.  
+//! Ziel ist es, Schritt für Schritt die wichtigsten Konzepte zu lernen:
+//!
+//! - Speicherzugriff und VGA-Ausgabe  
+//! - Hardware-Interrupts und CPU-Kontext  
+//! - Aufbau der GDT/IDT/TSS-Strukturen  
+//! - Fehlerbehandlung über Panic Handler  
+//! - Kernel-Tests im Bare-Metal-Umfeld (QEMU)
+//!
+//! # Aufbau
 //! 
+//! | Modul | Aufgabe |
+//! |--------|----------|
+//! | [serial] | Kommunikation über serielle Schnittstelle (z. B. für QEMU-Ausgabe) |
+//! | [vga_buffer] | Textausgabe direkt im VGA-Speicher |
+//! | [interrupts] | Verwaltung und Behandlung von CPU-Interrupts |
+//! | [gdt] | Aufbau der Global Descriptor Table |
+//!
+//! Weitere Funktionen wie Paging, Speicherverwaltung oder Multitasking
+//! können später ergänzt werden.
+//!
+//! # Testumgebung
+//!
+//! Das Projekt nutzt das **Custom Test Framework** von Rust,
+//! um automatisierte Kernel-Tests ohne Standardbibliothek auszuführen.
+//!
+//! Tests werden beim Start in QEMU gesammelt und ausgeführt.
+//! Ergebnisse werden über den seriellen Port an den Host ausgegeben.
 #![no_std]
 #![cfg_attr(test, no_main)]
 #![feature(custom_test_frameworks)]
@@ -17,13 +47,15 @@ pub mod gdt;
 
 use core::panic::PanicInfo;
 
-////////////////////////////////////////////////////////////////////////////////
+/// ### Trait: Testable
+///
+/// Wird verwendet, um alle Kernel-Tests zu erfassen und in einer einheitlichen
+/// Form auszuführen.
+///
+/// Dieses Trait abstrahiert Testfunktionen, sodass sie einheitlich
+/// aufgerufen und über die serielle Schnittstelle ausgegeben werden können.
 /// 
-/// ## Testable
-/// 
-/// Trait um alle Tests in allen Modulen "einzusammeln" und auszuführen.
-/// 
-////////////////////////////////////////////////////////////////////////////////
+/// Führt den Test aus und meldet den Status über den seriellen Port.
 pub trait Testable
 {
     fn run(&self) -> ();
@@ -42,6 +74,13 @@ where
     }
 }
 
+
+/// ### Test Runner
+///
+/// Führt alle Tests aus, die beim Build über das Custom Test Framework
+/// registriert wurden.
+///
+/// Nach erfolgreicher Ausführung wird QEMU mit dem Statuscode Success beendet.
 pub fn test_runner(tests: &[&dyn Testable])
 {
     serial_println!("Running {} tests", tests.len());
@@ -52,6 +91,11 @@ pub fn test_runner(tests: &[&dyn Testable])
     exit_qemu(QemuExitCode::Success);
 }
 
+/// ### Test Panic Handler
+///
+/// Wird aufgerufen, wenn ein Test fehlschlägt.
+/// Gibt die Fehlermeldung über den seriellen Port aus und beendet QEMU
+/// mit dem Statuscode Failed.
 pub fn test_panic_handler(info: &PanicInfo) -> !
 {
     serial_println!("[failed!]\n");
@@ -60,14 +104,11 @@ pub fn test_panic_handler(info: &PanicInfo) -> !
     loop{}
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/// 
-/// ## Eingangspunkt
-/// 
-/// Eigener Eingangspunkt und Panic Handler , da lib.rs nicht abhängig ist von
-/// main.rs.
-/// 
-////////////////////////////////////////////////////////////////////////////////
+
+/// ### Test Entry Point (nur bei #[cfg(test)])
+///
+/// Definiert den Einstiegspunkt für Testausführungen.
+/// Dieser ersetzt den normalen Kernelstart (_start) während Tests.
 #[cfg(test)]
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> !
@@ -77,6 +118,9 @@ pub extern "C" fn _start() -> !
     loop{}
 }
 
+/// ### Test Panic Handler
+///
+/// Setzt den Panic Handler während Tests auf [test_panic_handler].
 #[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> !
@@ -84,17 +128,10 @@ fn panic(info: &PanicInfo) -> !
     test_panic_handler(info)
 }
 
-////////////////////////////////////////////////////////////////////////////////
+/// ### QEMU Exit Codes
 ///
-/// ## Exit Qemu
-/// 
-/// Stellt die exit_qemu() Funktion bereit, welche verwendet werden kann,
-/// um einen Failed oder Success Exit Code bereitzustellen.
-/// Dadurch kann bestimmt werden, ob ein Prozess als erfolgreich oder nicht 
-/// erfolgreich bestimmt wird. 
-/// In der lib.rs wird QemuExitCode für alle zur Verfügung gestellt.
-/// 
-////////////////////////////////////////////////////////////////////////////////
+/// Stellt Exit-Codes bereit, mit denen QEMU beendet werden kann.
+/// Dadurch können Testergebnisse automatisiert ausgewertet werden.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum QemuExitCode
@@ -103,6 +140,14 @@ pub enum QemuExitCode
     Failed = 0x11,
 }
 
+/// ### Beendet QEMU mit einem bestimmten Exit Code.
+///
+/// Nutzt Port 0xF4, um QEMU kontrolliert zu beenden.
+/// Dieser Port ist in der Dokumentation von Qemu so vorgegeben
+///
+/// # Sicherheit
+///
+/// Der Aufruf greift direkt auf I/O-Ports der CPU zu und ist daher unsafe.
 pub fn exit_qemu(exit_code: QemuExitCode)
 {
     use x86_64::instructions::port::Port;
@@ -114,14 +159,11 @@ pub fn exit_qemu(exit_code: QemuExitCode)
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
+/// ### Initialisierung des Kernels
 ///
-/// ## Initialisieren von Interrupts
-/// 
-/// Initialisiert die Global Description Table (GDT) und die Interrupt 
-/// Description Table (IDT)
-/// 
-////////////////////////////////////////////////////////////////////////////////
+/// Führt grundlegende Setup-Schritte aus:
+/// - Initialisiert die [Global Descriptor Table](crate::gdt)
+/// - Initialisiert die [Interrupt Descriptor Table](crate::interrupts)
 pub fn init()
 {
     gdt::init();

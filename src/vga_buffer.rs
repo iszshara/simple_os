@@ -1,23 +1,37 @@
-//! vga_buffer.rs
-//! 1. Erstellt einen VGA Buffer.
-//! 2. Implementiert den WRITER.
-//! 3. Stellt das print! und println! macro zur Verfügung.
+//! # Modul: vga_buffer
+//!
+//! Dieses Modul implementiert eine einfache Textausgabe über den
+//! VGA-Textmodus (Speicheradresse 0xb8000).
+//!
+//! Es stellt den [WRITER] sowie die Makros [print!] und [println!] bereit,
+//! um Text direkt auf den Bildschirm zu schreiben – **ohne Standardbibliothek**.
+//!
+//! # Aufbau
+//!
+//! | Komponente | Beschreibung |
+//! |-------------|--------------|
+//! | [Color] | Enthält alle 16 VGA-Farben |
+//! | [Writer] | Schreibt Text in den VGA-Puffer |
+//! | [WRITER] | Globale, mutexgeschützte Writer-Instanz |
+//! | [print!], [println!] | Makros für formatierte Textausgabe |
+//!
+//! # Hintergrund
+//!
+//! Der VGA-Textmodus speichert Zeichen und Farbwerte in einem 80×25-Grid im Speicher
+//! (0xb8000). Jedes Zeichen besteht aus einem ASCII-Byte und einem Farbbyte.
+//!
+//! Da Bare-Metal-Umgebungen keine std::io-Funktionen bieten,
+//! müssen Ein- und Ausgaben direkt über Speicherzugriffe erfolgen.
 
 use spin::Mutex;
 use volatile::Volatile;
 use core::fmt;
 use lazy_static::lazy_static;
 
-////////////////////////////////////////////////////////////////////////////////
-/// 
-/// ## Enum
-/// 
-/// #[derive(Debug, Clone, Copy, PartialEq, Eq)] 
-/// -> Nun können Copy Semantics genutzt werden für den Type, sowie das man es 
-/// printen und vergleichen kann.
-/// 
-/// #[repr(u8)]
-/// -> dadurch werden alle Enum Variants als u8 gespeichert.
+/// Repräsentiert die 16 verfügbaren VGA-Farben.
+///
+/// Durch #[repr(u8)] werden die Varianten direkt als u8 gespeichert,
+/// was der tatsächlichen Speicherrepräsentation im VGA-Puffer entspricht.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -41,16 +55,10 @@ pub enum Color
     White = 15,
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/// 
-/// ## ColorCode
-/// 
-/// Der Color Code wird in einer struct gespeichert da er mehrere Argumente
-/// vereint. Weiterhin wird er als u8 gespeichert, da der Vordergrund 4 bit und 
-/// der Hintergrund 4 bit groß ist und so zusammengesetzt wird, wie man in dem
-/// impl-Block sehen kann.
-/// 
-////////////////////////////////////////////////////////////////////////////////
+/// Kombination aus Vorder- und Hintergrundfarbe.
+///
+/// Die unteren 4 Bits repräsentieren die Vordergrundfarbe,
+/// die oberen 4 Bits die Hintergrundfarbe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 struct ColorCode(u8);
@@ -63,16 +71,7 @@ impl ColorCode
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/// 
-/// ## ScreenChar
-/// 
-/// In der struct ScreenChar werden die Fields ascii_character und color_code
-/// initialisiert, da ein Char, der auf den Bildschirm geprintet wird, aus einem 
-/// Ascii Buchstaben besteht und dem dazugehörigen Color Code, um den 
-/// Hintergrund und Vordergrund darstellen zu können.
-/// 
-////////////////////////////////////////////////////////////////////////////////
+/// Repräsentiert ein einzelnes Zeichen im VGA-Puffer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 struct ScreenChar
@@ -81,17 +80,10 @@ struct ScreenChar
     color_code: ColorCode,
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/// 
-/// ## Buffer
-/// 
-/// Der Text wird in den Buffer geschrieben, aber in zukünftigen Rust Versionen
-/// könnte der Rust Compiler aggressiver optimieren und den Schreibprozess 
-/// auslassen da nur einmal in den Buffer geschrieben wird. Um das zu verhindern
-/// wird Volatile genutzt. Volatile zeigt dem Compiler an, das der Schreibvorgang
-/// Nebeneffekte haben kann und nicht wegoptimiert werden soll.
-/// 
-////////////////////////////////////////////////////////////////////////////////
+/// Der VGA-Textpuffer mit BUFFER_HEIGHT Zeilen und BUFFER_WIDTH Spalten.
+///
+/// Jedes Feld ist als [Volatile] markiert, damit der Compiler keine
+/// Speicherzugriffe entfernt, da sie **sichtbare Nebeneffekte** haben.
 const BUFFER_HEIGHT: usize = 25;
 const BUFFER_WIDTH: usize = 80;
 
@@ -101,15 +93,14 @@ struct Buffer
     chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/// 
 /// ## Writer
 /// 
-/// Das Writer struct vereint nun wieder mit den Fields column_position,
-/// color_code und buffer alle notwendigen Argumente die man braucht, um einen
-/// Buchstaben auf den Bildschirm zu schreiben.
-/// 
-////////////////////////////////////////////////////////////////////////////////
+/// Schreibt Zeichen in den VGA-Puffer.
+///
+/// Der [Writer] hält:
+/// - die aktuelle Spaltenposition,
+/// - den aktuellen [ColorCode],
+/// - eine mutable Referenz auf den [Buffer].
 pub struct Writer
 {
     column_position: usize,
@@ -119,15 +110,10 @@ pub struct Writer
 
 impl Writer 
 {
-    ////////////////////////////////////////////////////////////////////////////////
-    /// 
-    /// ## impl Writer - write_byte()
-    /// 
-    /// Schreibt Byte für Byte (Character für Character) in den Buffer hinein
-    /// und trackt die ganze Zeit die aktuelle Position, sowie den vorgegebenen
-    /// Abstand.
-    /// 
-    ////////////////////////////////////////////////////////////////////////////////
+    /// Schreibt ein einzelnes Byte in den VGA-Puffer.
+    ///
+    /// - Bei \n wird eine neue Zeile begonnen.
+    /// - Wenn die Zeile voll ist, wird automatisch nach unten gescrollt.
     pub fn write_byte(&mut self, byte: u8)
     {
         match byte
@@ -152,15 +138,9 @@ impl Writer
         }
     }
 
-    ////////////////////////////////////////////////////////////////////////////////
-    /// 
-    /// ## impl Writer - write_string()
-    /// 
-    /// Reiht die Bytes aus write_byte() hintereinander zu einem String zusammen und
-    /// checkt ob der geschriebene Character ein gültiger Ascii Character ist. Wenn
-    /// nicht wird ein weißes Viereck ausgegeben.
-    /// 
-    ////////////////////////////////////////////////////////////////////////////////
+    /// Schreibt einen String in den VGA-Puffer.
+    ///
+    /// Nicht druckbare ASCII-Zeichen werden als ■ (0xfe) dargestellt.
     pub fn write_string(&mut self, s: &str)
     {
         for byte in s.bytes()
@@ -175,15 +155,7 @@ impl Writer
         }
     }
 
-    ////////////////////////////////////////////////////////////////////////////////
-    /// 
-    /// ## impl-Writer new_line()
-    /// 
-    /// Wenn ein Character über die vorgegebene Breite der Zeile hinausgeschrieben
-    /// werden würde, springt die Funktion in die nächste Zeile in dem die aktuelle
-    /// row minus 1 gerechnet wird.
-    /// 
-    ////////////////////////////////////////////////////////////////////////////////
+    /// Scrollt den Puffer um eine Zeile nach oben.
     fn new_line(&mut self)
     {
         for row in 1..BUFFER_HEIGHT
@@ -198,14 +170,7 @@ impl Writer
         self.column_position = 0;
     }
 
-    ////////////////////////////////////////////////////////////////////////////////
-    /// 
-    /// ## impl-Writer clear_row()
-    /// 
-    /// Setzt den Wert der Spalte auf 0 und somit auf den Anfang zurück und leert
-    /// die aktuelle Zeile.
-    /// 
-    ////////////////////////////////////////////////////////////////////////////////
+    /// Löscht den Inhalt einer bestimmten Zeile.
     fn clear_row(&mut self, row: usize)
     {
         let blank = ScreenChar
@@ -220,14 +185,8 @@ impl Writer
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/// 
-/// ## impl fmt::Write for Writer
-/// 
-/// Formatiert den zusammengesetzten String aus write_string() in die 
-/// standardisierte UTF-8 Encodierung. 
-///  
-////////////////////////////////////////////////////////////////////////////////
+
+/// Ermöglicht das Verwenden von format_args! mit [Writer].
 impl fmt::Write for Writer
 {
     fn write_str(&mut self, s: &str) -> fmt::Result
@@ -239,18 +198,12 @@ impl fmt::Write for Writer
 
 lazy_static!
 {
-    ////////////////////////////////////////////////////////////////////////////////
-    /// 
-    /// ## WRITER
-    /// 
-    /// pub static ref bedeutet das eine statische Referenz(&'static T) erzeugt wird
-    /// , die beim ersten Zugriff initialisiert wird (durch lazy) und dann für 
-    /// den Rest des Programms unveränderlich bleibt. Mutex stellt währenddessen
-    /// sicher das immer nur ein Prozess auf WRITER zugreifen kann und wenn dieser 
-    /// fertig ist der lock() gelöst wird und andere Prozesse wieder auf WRITER 
-    /// zugreifen können.
-    /// 
-    ////////////////////////////////////////////////////////////////////////////////
+    /// Globale Writer-Instanz.
+    ///
+    /// Wird **lazy** initialisiert, um Reihenfolgeprobleme während des
+    /// Programmstarts zu vermeiden.  
+    /// Der [Mutex] stellt sicher, dass immer nur ein Thread gleichzeitig
+    /// auf den Writer zugreift.
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer
     {
         column_position: 0,
@@ -259,26 +212,18 @@ lazy_static!
     });
 }
 
-////////////////////////////////////////////////////////////////////////////////
+/// Gibt Text auf den VGA-Puffer aus.
 ///
-/// ## Custom Macro
-///
-/// Festlegen von eigenen Macros, da man nicht einfach so die normalen nutzen 
-/// kann. Das liegt daran das man die Bibliothek std::io nutzen müsste, welche
-/// aber 1.) von der std-Bibliothek abhängig ist und 2.) somit von einem 
-/// darunterliegenden OS abhängig ist.
-/// 
-/// ### Erklärung zu print!
-/// 
-/// print -> printed Character auf die aktuelle Zeile   
-/// println -> dasselbe wie print + neue Zeile
-/// 
-////////////////////////////////////////////////////////////////////////////////
+/// Funktioniert analog zu [print!], schreibt aber direkt auf den Bildschirm.
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => ($crate::vga_buffer::_print(format_args!($($arg)*)));
 }
 
+
+/// Gibt eine Zeile auf den VGA-Puffer aus.
+///
+/// Funktioniert analog zu [println!], schreibt aber direkt auf den Bildschirm.
 #[macro_export]
 macro_rules! println {
     () => ($crate::print!("\n"));
@@ -286,13 +231,12 @@ macro_rules! println {
 }
 
 #[doc(hidden)]
+/// Interne Hilfsfunktion zum Schreiben formatierten Textes.
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
     WRITER.lock().write_fmt(args).unwrap();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/// 
 /// ## Tests   
 /// 
 /// ### test_println_simple()   
@@ -308,8 +252,6 @@ pub fn _print(args: fmt::Arguments) {
 /// for-Schleife wird die Anzahl der Iterationen der Variable 'i' gezählt, 
 /// mittels enumerate und dann mittels assert_eq! abgeglichen ob dieselbe 
 /// Anzahl an Chars auf dem Bildschirm geprinted werden.
-/// 
-////////////////////////////////////////////////////////////////////////////////
 #[test_case]
 fn test_println_simple()
 {

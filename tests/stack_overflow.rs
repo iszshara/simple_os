@@ -1,5 +1,15 @@
-//! Testet ob ein Stack Overflow passieren kann
-
+//! # stack_overflow.rs
+//!
+//! Dieses Modul testet, ob ein **Stack Overflow** korrekt behandelt wird.
+//!
+//! Der Test überprüft, ob ein Double Fault ausgelöst wird, wenn der Stack vollläuft,  
+//! und ob der entsprechende Interrupt-Handler den Kernel in einem kontrollierten Zustand beendet.
+//!
+//! ## Übersicht
+//!
+//! - Kein std und kein main, da Bare-Metal-Umgebung
+//! - Nutzt [QemuExitCode] und [exit_qemu] für die Testauswertung
+//! - Initialisiert eine eigene Interrupt Descriptor Table (IDT) für den Double Fault
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
@@ -9,13 +19,16 @@ use simple_os::{serial_print, serial_println, exit_qemu, QemuExitCode};
 use lazy_static::lazy_static;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
-////////////////////////////////////////////////////////////////////////////////
+/// ## Einstiegspunkt (_start)
 ///
-/// ## Eingangspunkt
-/// 
-/// Startet die Funktion die einen Stack Overflow herbeiführt.
-/// 
-////////////////////////////////////////////////////////////////////////////////
+/// Startet die Funktion [stack_overflow()], die absichtlich einen Stack Overflow
+/// herbeiführt.  
+///
+/// Vorher wird die GDT initialisiert und eine eigene IDT geladen, die einen
+/// Double Fault Handler enthält.
+///
+/// Wenn die Overflow-Funktion **nicht** korrekt einen Double Fault auslöst,
+/// wird eine Panic ausgelöst.
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> !
 {
@@ -29,14 +42,15 @@ pub extern "C" fn _start() -> !
     panic!("Execution continued after stack overflow");
 }
 
-////////////////////////////////////////////////////////////////////////////////
+/// ## Double Fault Handler (test_double_fault_handler)
 ///
-/// ## test_double_fault_handler()
-/// 
-/// Implementiert einen Double Fault Handler zum Testen, bei dem ein Stack Frame
-/// und ein Error Code mitgegeben wird.
-/// 
-////////////////////////////////////////////////////////////////////////////////
+/// Wird aufgerufen, wenn ein Double Fault auftritt (z. B. durch Stack Overflow).
+/// Gibt [ok] aus und beendet QEMU mit [QemuExitCode::Success].
+///
+/// # Argumente
+///
+/// - `_stack_frame`: aktuelles Interrupt Stack Frame  
+/// - `_error_code`: Fehlercode des Double Fault Interrupts
 extern "x86-interrupt" fn test_double_fault_handler(
     _stack_frame: InterruptStackFrame,
     _error_code: u64,
@@ -47,23 +61,15 @@ extern "x86-interrupt" fn test_double_fault_handler(
     loop{}
 }
 
-////////////////////////////////////////////////////////////////////////////////
-///
 /// ## stack_overflow()
-/// 
-/// Funktion die einen Stack Overflow herbeiführt.
-/// Die Flag '#[allow(unconditional_recursion)]' muss genutzt werden da der 
-/// Kompiler (richtigerweise) das Programm nicht kompiliert.
-/// 
-/// ### Erklärung 
-/// 
-/// stack_overflow() -> Die Adresse der nächsten Anweisung nach dem 
-/// Funktionsaufruf (die Rücksprungadresse) wird auf den Stack gelegt -> die 
-/// Funktion wird erneut ausgeführt. Da die Funktion keine Abbruchbedingung hat
-/// ruft sie sich immer wieder selbst auf und legt jedes mal eine weitere
-/// Rücksprungadresse auf den Stack, der somit vollläuft.
-/// 
-////////////////////////////////////////////////////////////////////////////////
+///
+/// Führt einen unendlichen Funktionsaufruf aus, um einen Stack Overflow zu erzeugen.
+///
+/// # Erklärung
+///
+/// - Jede Rekursion legt die Rücksprungadresse auf den Stack
+/// - Da keine Abbruchbedingung existiert, wächst der Stack unkontrolliert
+/// - `volatile::Volatile::new(0).read()` verhindert Tail-Call-Optimierungen
 #[allow(unconditional_recursion)]
 fn stack_overflow()
 {
@@ -71,6 +77,10 @@ fn stack_overflow()
     volatile::Volatile::new(0).read(); // prevent tail recursion optimizations
 }
 
+/// ## Panic Handler
+///
+/// Wird aufgerufen, wenn während des Tests eine Panic auftritt.
+/// Leitet die Ausgabe an das Test-Framework von `simple_os` weiter.
 #[panic_handler]
 fn panic(info: &PanicInfo) -> !
 {
@@ -79,6 +89,10 @@ fn panic(info: &PanicInfo) -> !
 
 lazy_static!
 {
+    /// ## Test-IDT (`TEST_IDT`)
+    ///
+    /// Interrupt Descriptor Table für Tests, die den Double Fault abfängt.
+    /// Nutzt den Stack Index aus [`simple_os::gdt::DOUBLE_FAULT_IST_INDEX`].
     static ref TEST_IDT: InterruptDescriptorTable =
     {
         let mut idt = InterruptDescriptorTable::new();
@@ -92,13 +106,9 @@ lazy_static!
     };
 }
 
-////////////////////////////////////////////////////////////////////////////////
-///
 /// ## init_test_idt()
-/// 
-/// Lädt eine Interrupt Descriptor Table zum Testen.
-/// 
-////////////////////////////////////////////////////////////////////////////////
+///
+/// Lädt die Test-IDT (`TEST_IDT`) in die CPU.
 pub fn init_test_idt()
 {
     TEST_IDT.load();

@@ -1,4 +1,4 @@
-//! Implementiert einen Interrupt Descriptor Table (IDT)
+//! Modul interrupts
 //! 
 //! Dieses Modul enthält die Intialisierung und Definition der
 //! **Interrupt Descriptor Table (IDT)**, die von der CPU verwendet wird,
