@@ -46,6 +46,7 @@ pub mod interrupts;
 pub mod gdt;
 
 use core::panic::PanicInfo;
+// use crate::interrupts::PIC_1_OFFSET;
 
 /// ### Trait: Testable
 ///
@@ -101,7 +102,7 @@ pub fn test_panic_handler(info: &PanicInfo) -> !
     serial_println!("[failed!]\n");
     serial_println!("Error: {}\n", info);
     exit_qemu(QemuExitCode::Failed);
-    loop{}
+    hlt_loop();
 }
 
 
@@ -115,7 +116,7 @@ pub extern "C" fn _start() -> !
 {
     init();
     test_main();
-    loop{}
+    hlt_loop();
 }
 
 /// ### Test Panic Handler
@@ -159,13 +160,25 @@ pub fn exit_qemu(exit_code: QemuExitCode)
     }
 }
 
-/// ### Initialisierung des Kernels
+/// ## Initialisierung des Kernels
 ///
 /// Führt grundlegende Setup-Schritte aus:
 /// - Initialisiert die [Global Descriptor Table](crate::gdt)
 /// - Initialisiert die [Interrupt Descriptor Table](crate::interrupts)
+/// - Initialisiert die 8259 PIC
+/// - Aktiviert Interrupts in der CPU Konfiguration
 pub fn init()
 {
     gdt::init();
     interrupts::init_idt();
+    unsafe { interrupts::PICS.lock().initialize() };
+    x86_64::instructions::interrupts::enable();
+}
+
+pub fn hlt_loop() -> !
+{
+    loop
+    {
+        x86_64::instructions::hlt();
+    }
 }

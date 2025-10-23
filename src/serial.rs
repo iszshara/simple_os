@@ -19,15 +19,6 @@
 //! können normale Print-Makros (println!, eprintln!, etc.) nicht verwendet werden.
 //! Stattdessen werden die Ausgaben direkt an die UART-Schnittstelle (0x3F8) gesendet,
 //! welche typischerweise als **COM1** genutzt wird.
-//!
-//! # Beispiel
-//! ```rust,no_run
-//! use simple_os::serial_println;
-//! 
-//! serial_println!("Hello from the kernel!");
-//! ```
-
-use core::fmt::Write;
 
 use uart_16550::SerialPort;
 use spin::Mutex;
@@ -51,14 +42,31 @@ lazy_static!
 }
 
 #[doc(hidden)]
+/// ## Hilfsfunktion
+/// 
 /// Interne Hilfsfunktion, die Formatierungsargumente (fmt::Arguments) an den
 /// globalen [SERIAL1]-Port weiterleitet.
 ///
 /// Sollte **nicht direkt** verwendet werden – stattdessen die Makros
 /// [serial_print!] oder [serial_println!] nutzen.
+/// 
+/// ### Deadlock
+/// 
+/// Interrupts werden am Anfang der Funktion deaktiviert und
+/// nachdem sie fertig ist wieder aktiviert, damit es nicht zu einem
+/// Deadlock kommt.
 pub fn _print(args: ::core::fmt::Arguments)
 {
-    SERIAL1.lock().write_fmt(args).expect("Printing to serial failed");
+    use core::fmt::Write;
+    use x86_64::instructions::interrupts;
+
+    interrupts::without_interrupts(||
+    {
+        SERIAL1
+            .lock()
+            .write_fmt(args)
+            .expect("Printing to serial failed");
+    });
 }
 
 /// ### serial_print!
@@ -67,13 +75,6 @@ pub fn _print(args: ::core::fmt::Arguments)
 ///
 /// Funktioniert ähnlich wie das Standard-Makro [print!], verwendet jedoch
 /// den UART-Port statt der Standardausgabe.
-///
-/// # Beispiel
-/// ```rust,no_run
-/// use simple_os::serial_print;
-///
-/// serial_print!("Wert: {}", 42);
-/// ```
 #[macro_export]
 macro_rules! serial_print 
 {
@@ -94,14 +95,6 @@ macro_rules! serial_print
 /// 1. Ohne Argumente – gibt nur einen Zeilenumbruch aus  
 /// 2. Mit Formatstring  
 /// 3. Mit Formatstring und Argumenten
-///
-/// # Beispiel
-/// ```rust,no_run
-/// use simple_os::serial_println;
-///
-/// serial_println!("Hello Kernel!");
-/// serial_println!("Wert: {}", 1337);
-/// ```
 #[macro_export]
 macro_rules! serial_println 
 {

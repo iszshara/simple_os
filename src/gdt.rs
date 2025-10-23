@@ -23,6 +23,7 @@
 //! - [`Selectors`]: enthält die Code- und TSS-Selektoren  
 //! - [`init()`]: Initialisiert die GDT und lädt die Segmente in die CPU
 //! - [`TSS`]: Task State Segment, das die Interrupt-Stacks enthält
+
 use x86_64::VirtAddr;
 use x86_64::structures::tss::TaskStateSegment;
 use lazy_static::lazy_static;
@@ -141,14 +142,6 @@ struct Selectors
 ///
 /// Daher darf diese Funktion **nur während der Kernel-Initialisierung**
 /// und **nach erfolgreicher Erstellung aller GDT-Einträge** aufgerufen werden.
-///
-/// # Beispiel
-///
-/// ```no_run
-/// gdt::init();
-/// ```
-///
-/// [`CS`]: x86_64::instructions::segmentation::CS
 pub fn init()
 {
     use x86_64::instructions::tables::load_tss;

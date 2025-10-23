@@ -82,7 +82,7 @@ pub extern "C" fn _start() -> !
     test_main();
 
     println!("It did not crash!");
-    loop{}
+    simple_os::hlt_loop();
 }
 
 /// Panic-Handler für das Betriebssystem.
@@ -122,7 +122,7 @@ pub extern "C" fn _start() -> !
 fn panic(info: &PanicInfo) -> !
 {
     println!("{}", info);
-    loop{}
+    simple_os::hlt_loop();
 }
 
 #[cfg(test)]
