@@ -8,12 +8,14 @@
 //! - Breakpoints
 //! - Double Faults (mit separatem Stack aus dem TSS)
 
-use x86_64::{instructions::port::Port, structures::idt::{InterruptDescriptorTable, InterruptStackFrame}};
+use x86_64::{structures::idt::{InterruptDescriptorTable, InterruptStackFrame}};
 use crate::{print, println};
 use lazy_static::lazy_static;
 use crate::gdt;
 use spin;
 use pic8259::ChainedPics;
+use x86_64::structures::idt::PageFaultErrorCode;
+use crate::hlt_loop;
 
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -66,6 +68,7 @@ lazy_static!
         }
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
         idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_interrupt_handler);
+        idt.page_fault.set_handler_fn(page_fault_handler);
         
         idt
     };
@@ -134,6 +137,26 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
     }
 }
 
+/// # Handler für Keyboard Interrupts
+/// 
+/// Erstellt ein Keyboard Objekt, welches von einem `Mutex` gesichert wird.
+/// 
+/// Initialisiert:
+/// - US Keyboard
+/// - Scancode Set 1
+/// - HandleControl als ignoriert
+/// - Port 0x60 als I/O
+/// 
+/// Wenn diese Funktion aktiv ist wird sie mit einem `lock()` versehen, um weitere Interrupts
+/// zu verhindern, bis der Keyboard Interrupt abgearbeitet ist. 
+/// Der Port 0x60 wird genutzt, da er der I/O - Port des PS/2 Controllers ist.
+/// 
+/// Bei jedem Keyboard Interrupt wird der Handler aufgerufen und für die Dauer mit dem Mutex gesichert.
+/// Dann wird der scancode vom Keyboard Controller gelesen und der Wert als Parameter in die `add_byte()`
+/// Methode eingefügt, welche den Scancode in ein Option<KeyEvent> "übersetzt". Das `KeyEvent` stellt fest
+/// welcher Key gedrückt wurde und ob es ein Drücken oder Loslassen war. Um dieses KeyEvent
+/// zu interpretieren, wird es an die `process_keyevent()` Methode weitergegeben, welche das KeyEvent
+/// in einen Character umändert wenn möglich
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame)
 {
     // use x86_64::instructions::interrupts;
@@ -164,29 +187,21 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
         }    
     }
 
-    let key = match scancode
-    {
-        0x02 => Some('1'),
-        0x03 => Some('2'),
-        0x04 => Some('3'),
-        0x05 => Some('4'),
-        0x06 => Some('5'),
-        0x07 => Some('6'),
-        0x08 => Some('7'),
-        0x09 => Some('8'),
-        0x0a => Some('9'),
-        0x0b => Some('0'),
-        _ => None,
-    };
-    if let Some(key) = key
-    {
-        print!("{}", key);
-    }
-
     unsafe
     {
         PICS.lock().notify_end_of_interrupt(InterruptIndex::Keyboard.as_u8());
     }
+}
+
+extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode)
+{
+    use x86_64::registers::control::Cr2;
+
+    println!("EXCEPTION: PAGE FAULT");
+    println!("ACCESSED ADDRESS: {:?}", Cr2::read());
+    println!("ERROR CODE: {:?}", error_code);
+    println!("{:#?}", stack_frame);
+    hlt_loop();
 }
 
 /// # Offset für die PICs
